@@ -1,0 +1,50 @@
+# --- OS/Editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- Environment files ---
+.env
+.env.*
+!.env.example
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Node / Vite (frontend) ---
+**/node_modules/
+**/dist/
+**/.vite/
+**/.eslintcache
+*.tsbuildinfo
+
+# --- Python (backend) ---
+venv/
+backend/venv/
+**/__pycache__/
+**/*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.coverage
+coverage/
+
+# --- Build/artifacts ---
+build/
+out/
+.cache/
+
+backend/venv
+backend/__pycache__
+backend/app/__pycache__
+backend/app/stream_manager.cpython-313.pyc
+backend/app/stream_manager.cpython-313.pyo
+backend/app/stream_manager.cpython-313.pyd
+backend/app/stream_manager.cpython-313.pyw
+backend/app/stream_manager.cpython-313.pyz
+backend/app/stream_manager.cpython-313.pyzw
+backend/app/stream_manager.cpython-313.pyz
