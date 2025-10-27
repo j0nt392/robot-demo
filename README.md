@@ -28,6 +28,17 @@ robot-demo/
 
 ## Setup Instructions
 
+### Quick Start (Recommended)
+
+Run both servers with a single command:
+```bash
+./start.sh
+```
+
+This will start both the backend (port 8000) and frontend (port 5173) servers.
+
+### Manual Setup
+
 ### Backend Setup
 
 1. Navigate to the backend directory:
