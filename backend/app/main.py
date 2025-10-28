@@ -5,6 +5,11 @@ import asyncio
 import io
 import time
 from typing import AsyncIterator
+from pydantic import BaseModel
+
+class TelemetryIn(BaseModel):
+    t: float
+    motors: list[float] # length 6. channels 0-5.
 
 app = FastAPI(title="Robot Backend")
 
@@ -70,6 +75,10 @@ app.add_middleware(
 async def health():
     return {"ok": True, "time": time.time()}
 
+@app.post("/ingest")
+async def ingest(data: TelemetryIn):
+    await _safe_put({"t": data.t, "motors": data.motors})
+    return {"ok": True}
 
 async def generate_mjpeg(camera: str = "default") -> AsyncIterator[bytes]:
     """Dummy MJPEG stream (solid color frames that change over time).
@@ -112,7 +121,7 @@ async def video_stream_wrist():
 @app.websocket("/ws/telemetry")
 async def telemetry_ws(ws: WebSocket):
     await ws.accept()
-    await start_dummy()
+    # await start_dummy()
     try:
         while True:
             payload = await telemetry_queue.get()
