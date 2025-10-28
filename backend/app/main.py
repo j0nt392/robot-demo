@@ -5,12 +5,56 @@ import asyncio
 import io
 import time
 from typing import AsyncIterator
-import os
-
-from .stream_manager import StreamManager
 
 app = FastAPI(title="Robot Backend")
-stream_manager = StreamManager()
+
+# --- Simplified single-client telemetry pipeline ---
+telemetry_queue: asyncio.Queue = asyncio.Queue(maxsize=256)
+dummy_task: asyncio.Task | None = None
+
+
+async def _safe_put(payload: dict) -> None:
+    if telemetry_queue.full():
+        try:
+            telemetry_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    try:
+        telemetry_queue.put_nowait(payload)
+    except asyncio.QueueFull:
+        pass
+
+
+async def start_dummy() -> None:
+    global dummy_task
+    if dummy_task is not None and not dummy_task.done():
+        return
+
+    async def _producer() -> None:
+        import math
+        t = 0.0
+        try:
+            while True:
+                values = [100 + 40 * math.sin(0.6 * t + i) for i in range(6)]
+                await _safe_put({"t": t, "motors": [round(max(0, v), 2) for v in values]})
+                t += 0.1
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            return
+
+    dummy_task = asyncio.create_task(_producer())
+
+
+async def stop_dummy() -> None:
+    # Unused in dummy-only mode; kept minimal if needed later
+    global dummy_task
+    if dummy_task is not None:
+        dummy_task.cancel()
+        try:
+            await dummy_task
+        except asyncio.CancelledError:
+            pass
+        dummy_task = None
 
 
 app.add_middleware(
@@ -68,47 +112,15 @@ async def video_stream_wrist():
 @app.websocket("/ws/telemetry")
 async def telemetry_ws(ws: WebSocket):
     await ws.accept()
-    # Ensure dummy producer is running
-    await stream_manager.ensure_dummy_running()
-    queue = stream_manager.subscribe()
+    await start_dummy()
     try:
         while True:
-            payload = await queue.get()
+            payload = await telemetry_queue.get()
             await ws.send_json(payload)
     except WebSocketDisconnect:
-        stream_manager.unsubscribe(queue)
         return
 
 
-@app.post("/run")
-async def run_process(
-    repo_path: str,
-    calibration: str = "",
-    model: str = "",
-    usb_ports: str = "",
-):
-    """Start the external eval script as a subprocess and stream its JSONL telemetry.
-
-    For now we just build a command and delegate to the StreamManager.
-    The eval script is expected to print JSON lines like {"t": ..., "motors": [...]}
-    """
-    cmd = [
-        os.path.join(os.environ.get("PYTHON", "python")),
-        "eval_lerobot.py",
-        "--calibration",
-        calibration,
-        "--model",
-        model,
-        "--usb-ports",
-        usb_ports,
-    ]
-    await stream_manager.start_process(cmd, cwd=repo_path)
-    return {"started": True}
-
-
-@app.post("/stop")
-async def stop_process():
-    await stream_manager.stop_process()
-    return {"stopped": True}
+# Removed /run and /stop endpoints for dummy-only mode
 
 
