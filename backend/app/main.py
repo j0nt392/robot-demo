@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -16,6 +16,7 @@ app = FastAPI(title="Robot Backend")
 # --- Simplified single-client telemetry pipeline ---
 telemetry_queue: asyncio.Queue = asyncio.Queue(maxsize=256)
 dummy_task: asyncio.Task | None = None
+latest_frames: dict[str, bytes] = {"front": b"", "wrist": b""}
 
 
 async def _safe_put(payload: dict) -> None:
@@ -80,6 +81,14 @@ async def ingest(data: TelemetryIn):
     await _safe_put({"t": data.t, "motors": data.motors})
     return {"ok": True}
 
+
+@app.post("/ingest_frame/{camera}")
+async def ingest_frame(camera: str, data: bytes = Body(...)):
+    if camera not in ("front", "wrist"):
+        raise HTTPException(status_code=400, detail="camera must be 'front' or 'wrist'")
+    latest_frames[camera] = data
+    return {"ok": True}
+
 async def generate_mjpeg(camera: str = "default") -> AsyncIterator[bytes]:
     """Dummy MJPEG stream (solid color frames that change over time).
 
@@ -89,17 +98,20 @@ async def generate_mjpeg(camera: str = "default") -> AsyncIterator[bytes]:
     base = sum(camera.encode("utf-8")) % 255
     hue = base
     while True:
-        # Create a tiny PNG as placeholder without heavy deps
-        from PIL import Image  # type: ignore
-
-        img = Image.new("RGB", (640, 480), (hue % 255, (hue * 2) % 255, (hue * 3) % 255))
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=60)
-        frame = buf.getvalue()
+        # If a latest ingested frame exists for this camera, stream it; else stream dummy
+        frame_bytes = latest_frames.get(camera) or b""
+        if frame_bytes:
+            frame = frame_bytes
+        else:
+            from PIL import Image  # type: ignore
+            img = Image.new("RGB", (640, 480), (hue % 255, (hue * 2) % 255, (hue * 3) % 255))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=60)
+            frame = buf.getvalue()
+            hue = (hue + 5) % 255
 
         yield boundary + b"\r\n" + b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
-        hue = (hue + 5) % 255
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.033)
 
 
 @app.get("/video.mjpeg")
